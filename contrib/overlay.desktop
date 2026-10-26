@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Side Panel
+Name=Overlay
 Comment=Low-latency side-panel launcher
 # Adjust to the installed location, or rely on it being in $PATH.
-Exec=sidepanel
+Exec=overlay
 Terminal=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true

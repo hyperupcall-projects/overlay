@@ -1,4 +1,4 @@
-# sidepanel
+# overlay
 
 A small, low-latency side-panel launcher for **KDE Plasma on Wayland**.
 
@@ -19,9 +19,9 @@ the site in a separate browser window that is **pre-warmed at startup** —
 created hidden on `about:blank`, so the window appears immediately on the
 first click while loading nothing until then.
 
-Inside that window, links to the current hostname stay in sidepanel. Links to
+Inside that window, links to the current hostname stay in overlay. Links to
 other hostnames open through `xdg-open` in your default desktop browser (for
-example Brave or Chrome), leaving the sidepanel page open. This also applies
+example Brave or Chrome), leaving the overlay page open. This also applies
 to links requesting a new tab or window. Subdomains count as different
 hostnames; automatic redirects and sign-in flows continue normally.
 
@@ -100,7 +100,7 @@ and timed sessions are also cleared in the background while the app runs.
 Bookmarks, panel sizes, appearance, and other preferences remain saved.
 
 Session snapshots and the private browser profile live under
-`$XDG_STATE_HOME/sidepanel/` (normally `~/.local/state/sidepanel/`), separately
+`$XDG_STATE_HOME/overlay/` (normally `~/.local/state/overlay/`), separately
 from `config.toml`. App restarts restore the current URL, WebKit history,
 window size/position, and panel state on the next shortcut press. Live page
 memory is preserved across hide/show; after a process or computer restart the
@@ -154,7 +154,7 @@ No X11 support, by design.
 
 ```sh
 cargo build --release
-# binary at target/release/sidepanel
+# binary at target/release/overlay
 ```
 
 Shortcut capture uses SCTK's `xkbcommon` feature and requires the system
@@ -181,7 +181,7 @@ and everything else keeps working.
 ## Run
 
 ```sh
-./target/release/sidepanel
+./target/release/overlay
 ```
 
 It runs as a daemon (it does not exit). Press **Meta+F** to toggle the panel.
@@ -197,9 +197,9 @@ sets up a **systemd user service** bound to the graphical session:
 
 That is equivalent to:
 
-- copy `target/release/sidepanel` to `~/.local/bin/sidepanel`,
-- copy `contrib/sidepanel.service` to `~/.config/systemd/user/`,
-- `systemctl --user enable --now sidepanel.service`.
+- copy `target/release/overlay` to `~/.local/bin/overlay`,
+- copy `contrib/overlay.service` to `~/.config/systemd/user/`,
+- `systemctl --user enable --now overlay.service`.
 
 The service starts with `graphical-session.target` and stops with it. It is
 deliberately **not** lingered: the app needs `WAYLAND_DISPLAY`, which only
@@ -211,12 +211,12 @@ not start now), `--uninstall`.
 > The installer uses systemd rather than the XDG autostart protocol. On Plasma 6
 > the autostart path is backed by systemd anyway, but its generated unit
 > hardcodes `Restart=no`, so a crashed daemon would not come back until the next
-> login. (`contrib/sidepanel.desktop` is retained for reference but is not used
+> login. (`contrib/overlay.desktop` is retained for reference but is not used
 > by the installer.)
 
 ## Configuration
 
-Copy `contrib/config.toml` to `~/.config/sidepanel/config.toml`:
+Copy `contrib/config.toml` to `~/.config/overlay/config.toml`:
 
 ```toml
 left_width = 64    # logical pixels; 48-800
@@ -261,7 +261,7 @@ are all supported — and each row shows a globe placeholder until its icon
 arrives. See `contrib/config.toml` for the annotated example.
 
 `shortcut` is only the *default*. Once registered, the action also appears in
-**System Settings → Shortcuts** (component "Side Panel"), where the user can
+**System Settings → Shortcuts** (component "Overlay"), where the user can
 rebind it. A user-set binding is respected on later launches.
 
 ## Latency notes
@@ -305,7 +305,7 @@ recorder; cancel and choose another combination in that case.
 Registration uses the [KGlobalAccel D-Bus API](https://invent.kde.org/frameworks/kglobalaccel/-/blob/master/src/org.kde.KGlobalAccel.xml).
 Startup continues to respect existing KDE shortcut overrides and displays the
 binding KDE returns. The default remains **Meta+F**. It can also be changed in
-**System Settings → Shortcuts → Side Panel**.
+**System Settings → Shortcuts → Overlay**.
 
 Keyboard capture needs these development packages:
 
@@ -337,7 +337,7 @@ global shortcut to dismiss the panel.
 - **"zwlr_layer_shell_v1 is not available"** — you are not on a compositor that
   implements layer-shell (KWin does). Check with `wayland-info | grep layer`.
 - **Shortcut never fires** — check that the action appears in
-  **System Settings → Shortcuts** (component "Side Panel"). You can introspect
+  **System Settings → Shortcuts** (component "Overlay"). You can introspect
   the service (read-only) with:
   ```sh
   gdbus introspect --session --dest org.kde.kglobalaccel --object-path /kglobalaccel

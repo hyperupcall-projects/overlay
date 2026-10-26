@@ -1,5 +1,5 @@
 [package]
-name = "sidepanel"
+name = "overlay"
 version = "0.1.0"
 edition = "2021"
 description = "Low-latency side-panel launcher for KDE Plasma on Wayland"

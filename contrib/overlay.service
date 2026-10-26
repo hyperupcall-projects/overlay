@@ -1,5 +1,5 @@
 [Unit]
-Description=Side Panel launcher
+Description=Overlay launcher
 # Start with the graphical session and stop with it.
 After=graphical-session.target
 PartOf=graphical-session.target
@@ -9,7 +9,7 @@ ConditionEnvironment=WAYLAND_DISPLAY
 [Service]
 Type=simple
 # Adjust to the installed location.
-ExecStart=%h/.local/bin/sidepanel
+ExecStart=%h/.local/bin/overlay
 Restart=on-failure
 RestartSec=2
 

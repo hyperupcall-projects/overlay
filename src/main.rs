@@ -1,4 +1,4 @@
-//! sidepanel — a low-latency side-panel launcher for KDE Plasma on Wayland.
+//! overlay — a low-latency side-panel launcher for KDE Plasma on Wayland.
 //!
 //! Design:
 //!   * a single long-running process (never spawn-per-press),
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
 
     let config = Config::load();
     log::info!(
-        "sidepanel starting (edges={} / {} / {} / {}px, shortcut={})",
+        "overlay starting (edges={} / {} / {} / {}px, shortcut={})",
         config.left_width,
         config.right_width,
         config.top_height,
@@ -391,7 +391,7 @@ impl App {
             &qh,
             surface,
             Layer::Overlay,
-            Some(self.config.panel_animation.namespace("sidepanel")),
+            Some(self.config.panel_animation.namespace("overlay")),
             None,
         );
 
@@ -468,7 +468,7 @@ impl App {
             &self.qh,
             surface,
             Layer::Top,
-            Some(opening.mode.namespace("sidepanel-backdrop")),
+            Some(opening.mode.namespace("overlay-backdrop")),
             Some(output),
         );
         layer.set_size(0, 0);
@@ -545,7 +545,7 @@ impl App {
             &self.qh,
             surface,
             Layer::Overlay,
-            Some(self.config.panel_animation.namespace("sidepanel-settings")),
+            Some(self.config.panel_animation.namespace("overlay-settings")),
             output.as_ref(),
         );
         layer.set_size(width, height);

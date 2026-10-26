@@ -20,7 +20,7 @@ fn state_directory() -> Option<PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-        .map(|path| path.join("sidepanel"))
+        .map(|path| path.join("overlay"))
 }
 
 pub fn browser_data_path() -> Option<PathBuf> {
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn cache_roundtrip_expiry_and_corruption() {
         let dir =
-            std::env::temp_dir().join(format!("sidepanel-session-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("overlay-session-test-{}", std::process::id()));
         let store = Store {
             path: Some(dir.join("session.json")),
         };

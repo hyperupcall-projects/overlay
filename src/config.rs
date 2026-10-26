@@ -1,4 +1,4 @@
-//! Runtime configuration, loaded from `$XDG_CONFIG_HOME/sidepanel/config.toml`.
+//! Runtime configuration, loaded from `$XDG_CONFIG_HOME/overlay/config.toml`.
 //!
 //! Every field is optional; missing files or fields fall back to the defaults
 //! below, so the app runs out of the box. The panel's Settings UI writes
@@ -368,7 +368,7 @@ fn config_path() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(base.join("sidepanel").join("config.toml"))
+    Some(base.join("overlay").join("config.toml"))
 }
 
 #[cfg(test)]
@@ -575,12 +575,12 @@ mod tests {
             assert_eq!(parsed.fade_duration_ms, 375);
         }
         assert_eq!(
-            PanelAnimation::DesktopDefault.namespace("sidepanel"),
-            "sidepanel"
+            PanelAnimation::DesktopDefault.namespace("overlay"),
+            "overlay"
         );
-        assert_eq!(PanelAnimation::FadeIn.namespace("sidepanel"), "dock");
+        assert_eq!(PanelAnimation::FadeIn.namespace("overlay"), "dock");
         assert_eq!(
-            PanelAnimation::Instant.namespace("sidepanel-settings"),
+            PanelAnimation::Instant.namespace("overlay-settings"),
             "dock"
         );
     }

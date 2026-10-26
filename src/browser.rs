@@ -1,7 +1,7 @@
 //! The browser: a separate, pre-warmed **process** hosting a wry/WebKitGTK
 //! window.
 //!
-//! The panel spawns `sidepanel --browser <width> <height>` at startup. The
+//! The panel spawns `overlay --browser <width> <height>` at startup. The
 //! helper creates its window and WebKit view immediately but keeps it hidden
 //! on `about:blank`: no page is loaded and nothing is shown until a bookmark
 //! is clicked, but the view (and, best effort, its web process) is already
@@ -490,7 +490,7 @@ impl Drop for Browser {
     }
 }
 
-/// Entry point of the helper process (`sidepanel --browser [w h]`).
+/// Entry point of the helper process (`overlay --browser [w h]`).
 ///
 /// Runs the GTK event loop on the main thread; a reader thread turns stdin
 /// lines into wake-ups so GTK keeps pumping while waiting for commands.

@@ -1,4 +1,4 @@
-# sidepanel — implementation notes
+# overlay — implementation notes
 
 The current launcher renders four edge panels and four corner boxes inside
 one transparent, output-sized layer surface. `src/frame.rs` computes the eight
@@ -15,7 +15,7 @@ new backdrop parent is ready. Native close updates logical visibility through
 helper stdout events, so a closed browser is not reopened.
 
 `src/persistence.rs` stores a versioned JSON session with a private, atomic
-0600 write under XDG_STATE_HOME/sidepanel; preferences remain in config.toml.
+0600 write under XDG_STATE_HOME/overlay; preferences remain in config.toml.
 A one-second timer saves changed panel state and checks hidden-session expiry.
 Browser events include the current URI, serialized WebKit history, window state,
 and placement. Their generation prevents old helper events from resurrecting
@@ -517,7 +517,7 @@ fn show(&mut self) {
     let surface = self.compositor_state.create_surface(&qh);
     let layer =
         self.layer_shell
-            .create_layer_surface(&qh, surface, Layer::Top, Some("sidepanel"), None);
+            .create_layer_surface(&qh, surface, Layer::Top, Some("overlay"), None);
 
     layer.set_size(self.config.width, 0);
     layer.set_anchor(match self.config.side {
@@ -771,7 +771,7 @@ Placement pitfall: fontdue's `ymin` is the bitmap's **bottom** edge above the
 baseline, so the glyph's top-left is `baseline - ymin - height`.
 
 ### 3.5 The browser: a separate, pre-warmed process
-At startup the panel spawns `sidepanel --browser` (same binary; GTK runs on
+At startup the panel spawns `overlay --browser` (same binary; GTK runs on
 the helper's main thread). The helper builds a `gtk::Window` + wry/WebKitGTK
 webview at `about:blank`, calls `realize()`, then `show(); hide();` **before
 pumping a single GTK event** — the widget tree (and best effort the WebKit

@@ -1,5 +1,5 @@
-# Example config for sidepanel.
-# Copy to: $XDG_CONFIG_HOME/sidepanel/config.toml  (usually ~/.config/sidepanel/config.toml)
+# Example config for overlay.
+# Copy to: $XDG_CONFIG_HOME/overlay/config.toml  (usually ~/.config/overlay/config.toml)
 # Every field is optional; omitted fields use the defaults shown here.
 
 # Four independent edge thicknesses in logical pixels (also in Settings).

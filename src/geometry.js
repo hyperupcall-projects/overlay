@@ -7,11 +7,11 @@
         function record() {
             if (restoring || window.deleted) return;
             const g = window.frameGeometry;
-            callDBus(service, "/Geometry", "org.sidepanel.Geometry", "Record",
+            callDBus(service, "/Geometry", "org.overlay.Geometry", "Record",
                 JSON.stringify({x: g.x, y: g.y, width: g.width, height: g.height}));
         }
         window.frameGeometryChanged.connect(record);
-        callDBus(service, "/Geometry", "org.sidepanel.Geometry", "Read", function (value) {
+        callDBus(service, "/Geometry", "org.overlay.Geometry", "Read", function (value) {
             if (window.deleted) return;
             const saved = JSON.parse(value);
             if (saved) {

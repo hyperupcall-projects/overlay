@@ -36,7 +36,7 @@ impl Placement {
     }
 }
 
-#[zbus::interface(name = "org.sidepanel.Geometry")]
+#[zbus::interface(name = "org.overlay.Geometry")]
 impl Placement {
     fn read(&self) -> String {
         serde_json::to_string(&self.get()).unwrap()
@@ -57,13 +57,13 @@ pub struct Bridge {
 impl Bridge {
     pub fn start(placement: Placement) -> anyhow::Result<Self> {
         let pid = std::process::id();
-        let service = format!("org.sidepanel.Geometry.p{pid}");
+        let service = format!("org.overlay.Geometry.p{pid}");
         let connection = zbus::blocking::connection::Builder::session()?
             .method_timeout(std::time::Duration::from_secs(2))
             .name(service.as_str())?
             .serve_at("/Geometry", placement)?
             .build()?;
-        let name = format!("sidepanel-geometry-{pid}");
+        let name = format!("overlay-geometry-{pid}");
         let directory = std::env::temp_dir().join(&name);
         std::fs::DirBuilder::new().mode(0o700).create(&directory)?;
         let bridge = Self {
@@ -134,8 +134,8 @@ pub fn cleanup(pid: u32) {
             "org.kde.kwin.Scripting",
         ) {
             let _ =
-                proxy.call::<_, _, bool>("unloadScript", &(format!("sidepanel-geometry-{pid}"),));
+                proxy.call::<_, _, bool>("unloadScript", &(format!("overlay-geometry-{pid}"),));
         }
     }
-    let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("sidepanel-geometry-{pid}")));
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("overlay-geometry-{pid}")));
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — install sidepanel for the current user and start it with the
+# install.sh — install overlay for the current user and start it with the
 # graphical session via a systemd user service.
 #
 # The unit is bound to graphical-session.target, so it starts and stops with
@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-PROG=sidepanel
+PROG=overlay
 PREFIX="${HOME}/.local"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 CONFIG_DIR="${CONFIG_HOME}/${PROG}"
@@ -25,7 +25,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Install sidepanel for the current user and start it with the graphical session.
+Install overlay for the current user and start it with the graphical session.
 
 Usage:
   install.sh [--prefix DIR] [--no-start] [--uninstall]

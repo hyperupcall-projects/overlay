@@ -17,11 +17,11 @@ use std::sync::mpsc;
 use crate::config::Config;
 
 /// Component (application) id used with KGlobalAccel.
-pub const COMPONENT: &str = "sidepanel";
+pub const COMPONENT: &str = "overlay";
 /// Action id used with KGlobalAccel.
 pub const ACTION: &str = "toggle";
-const COMPONENT_FRIENDLY: &str = "Side Panel";
-const ACTION_FRIENDLY: &str = "Toggle Side Panel";
+const COMPONENT_FRIENDLY: &str = "Overlay";
+const ACTION_FRIENDLY: &str = "Toggle Overlay";
 
 /// `KGlobalAccelD::SetShortcutFlag` values (see `kglobalacceld.h`).
 ///
