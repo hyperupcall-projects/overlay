@@ -18,6 +18,8 @@ use crate::config::Config;
 
 /// Component (application) id used with KGlobalAccel.
 pub const COMPONENT: &str = "overlay";
+/// Component id from before the rename. Its registration is released on startup.
+const LEGACY_COMPONENT: &str = "sidepanel";
 /// Action id used with KGlobalAccel.
 pub const ACTION: &str = "toggle";
 const COMPONENT_FRIENDLY: &str = "Overlay";
@@ -68,6 +70,12 @@ trait KGlobalAccel {
     #[zbus(name = "shortcutKeys")]
     fn shortcut_keys(&self, action_id: &[&str]) -> zbus::Result<Vec<(Vec<i32>,)>>;
 
+    /// Drop one action. Used to release the pre-rename `sidepanel` registration,
+    /// which otherwise keeps holding the shortcut after the component id changes.
+    /// The D-Bus name is lowercase; zbus would otherwise call `Unregister`.
+    #[zbus(name = "unregister")]
+    fn unregister(&self, component_unique: &str, action_unique: &str) -> zbus::Result<bool>;
+
     #[zbus(name = "getComponent")]
     fn get_component(
         &self,
@@ -114,6 +122,16 @@ fn run(
     let kga = KGlobalAccelProxyBlocking::new(&conn)
         .context("KGlobalAccel is unavailable (is kglobalacceld running?)")?;
 
+    // This component used to be `sidepanel`. That registration survives the
+    // rename and keeps the shortcut, so the new component is left with no binding.
+    match kga.unregister(LEGACY_COMPONENT, ACTION) {
+        Ok(true) => {
+            log::info!("released leftover '{LEGACY_COMPONENT}' shortcut from before the rename")
+        }
+        Ok(false) => {}
+        Err(err) => log::warn!("could not release leftover '{LEGACY_COMPONENT}' shortcut: {err}"),
+    }
+
     let action_id = [COMPONENT, ACTION, COMPONENT_FRIENDLY, ACTION_FRIENDLY];
     kga.do_register(&action_id)
         .context("failed to register the component with KGlobalAccel")?;
@@ -121,13 +139,29 @@ fn run(
     let combined = parse_shortcut(&config.shortcut)?;
     let keys = [(encode_sequence(combined),)];
 
-    // `SetPresent` marks the shortcut active. We deliberately do *not* pass
-    // `NoAutoloading`: with autoloading the daemon keeps a binding the user has
-    // customised in System Settings and only installs ours when the action has
-    // none yet. Either way it returns the binding actually in effect.
-    let applied = kga
+    // `SetPresent` marks the shortcut active. Without `NoAutoloading` the daemon
+    // keeps a binding customised in System Settings. An empty result is not a
+    // customisation — it is how a failed or cleared claim is stored — so fall
+    // back to the configured shortcut.
+    let mut applied = kga
         .set_shortcut_keys(&action_id, &keys, SET_PRESENT)
         .context("failed to set the global shortcut")?;
+    if !has_active_binding(&applied) {
+        if kga.shortcut_available(&keys[0], COMPONENT)? {
+            log::info!(
+                "no active shortcut was registered; applying configured shortcut '{}'",
+                config.shortcut
+            );
+            applied = kga
+                .set_shortcut_keys(&action_id, &keys, SET_PRESENT | NO_AUTOLOADING)
+                .context("failed to apply the configured shortcut")?;
+        } else {
+            log::warn!(
+                "configured shortcut '{}' is already used by another application; overlay has no active binding",
+                config.shortcut
+            );
+        }
+    }
 
     // Also record our binding as the action's default, so it shows up in System
     // Settings → Shortcuts and can be restored there.
@@ -399,17 +433,21 @@ fn encode_sequence(combined: i32) -> Vec<i32> {
     vec![combined, 0, 0, 0]
 }
 
+/// True when KDE returned at least one non-zero key.
+fn has_active_binding(applied: &[(Vec<i32>,)]) -> bool {
+    applied
+        .iter()
+        .any(|(seq,)| seq.iter().any(|&code| code != 0))
+}
+
 /// Render the keys returned by `setShortcutKeys` for logging.
 fn describe(applied: &[(Vec<i32>,)]) -> String {
-    if applied.is_empty() {
+    if !has_active_binding(applied) {
         return "none".to_string();
     }
     applied
         .iter()
-        .map(|(seq,)| match seq.first() {
-            Some(code) => format!("0x{code:08x}"),
-            None => "none".to_string(),
-        })
+        .filter_map(|(seq,)| format_sequence(seq))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -486,6 +524,15 @@ mod tests {
     #[test]
     fn sequence_is_padded_to_four_ints() {
         assert_eq!(encode_sequence(0x1000_0046), vec![0x1000_0046, 0, 0, 0]);
+    }
+
+    #[test]
+    fn empty_binding_is_not_active() {
+        assert!(!has_active_binding(&[]));
+        assert!(!has_active_binding(&[(vec![0, 0, 0, 0],)]));
+        assert!(has_active_binding(&[(encode_sequence(0x1000_0048),)]));
+        assert_eq!(describe(&[]), "none");
+        assert_eq!(describe(&[(encode_sequence(0x1000_0048),)]), "Meta+H");
     }
 
     #[test]

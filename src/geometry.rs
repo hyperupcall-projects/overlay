@@ -133,8 +133,7 @@ pub fn cleanup(pid: u32) {
             "/Scripting",
             "org.kde.kwin.Scripting",
         ) {
-            let _ =
-                proxy.call::<_, _, bool>("unloadScript", &(format!("overlay-geometry-{pid}"),));
+            let _ = proxy.call::<_, _, bool>("unloadScript", &(format!("overlay-geometry-{pid}"),));
         }
     }
     let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("overlay-geometry-{pid}")));

@@ -10,6 +10,7 @@
 
 mod animation;
 mod browser;
+mod browser_animation;
 mod clipboard;
 mod config;
 mod editor;
@@ -70,12 +71,15 @@ fn main() -> Result<()> {
 
     // Browser-helper mode: runs the pre-warmed window, driven over stdin.
     // Optional arguments: the initial window size (width height).
+    // `--launch` maps the frame immediately instead of waiting for the shortcut.
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some(browser::ARG) {
+    let first = args.next();
+    if first.as_deref() == Some(browser::ARG) {
         let width = args.next().and_then(|arg| arg.parse().ok());
         let height = args.next().and_then(|arg| arg.parse().ok());
         return browser::run(width, height);
     }
+    let launch = first.as_deref() == Some("--launch") || args.any(|arg| arg == "--launch");
 
     let config = Config::load();
     log::info!(
@@ -107,6 +111,8 @@ fn main() -> Result<()> {
     let browser = browser::Browser::start(
         config.browser_width,
         config.browser_height,
+        config.panel_animation,
+        config.fade_duration_ms,
         session.browser.clone(),
         browser_tx,
     );
@@ -304,6 +310,20 @@ fn main() -> Result<()> {
             .context("failed to start the global-shortcut listener")?,
     );
 
+    if launch {
+        // Show on the first loop turn, once Wayland requests are being flushed.
+        handle
+            .insert_source(
+                calloop::timer::Timer::from_duration(std::time::Duration::ZERO),
+                |_, _, app| {
+                    log::info!("showing panels now (--launch)");
+                    app.show();
+                    calloop::timer::TimeoutAction::Drop
+                },
+            )
+            .map_err(|err| anyhow!("failed to schedule --launch: {err:?}"))?;
+    }
+
     event_loop
         .run(None, &mut app, |_| {})
         .context("the event loop terminated with an error")?;
@@ -317,6 +337,10 @@ enum SurfaceKind {
 }
 
 /// A currently-mapped panel surface.
+/// Layer-shell zone for covering the whole output. Zero would instead move the
+/// surface out of the space reserved by panels and other layer-shell clients.
+const IGNORE_EXCLUSIVE_ZONES: i32 = -1;
+
 struct Panel {
     layer: LayerSurface,
     width: u32,
@@ -399,8 +423,7 @@ impl App {
         // same output and atomic geometry. Only the cards accept pointer input.
         layer.set_size(0, 0);
         layer.set_anchor(Anchor::LEFT | Anchor::RIGHT | Anchor::TOP | Anchor::BOTTOM);
-        // Overlay the desktop rather than reserving space for a panel.
-        layer.set_exclusive_zone(0);
+        layer.set_exclusive_zone(IGNORE_EXCLUSIVE_ZONES);
         // Grab the keyboard while shown, so typing goes to the launcher.
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.set_margin(0, 0, 0, 0);
@@ -473,7 +496,7 @@ impl App {
         );
         layer.set_size(0, 0);
         layer.set_anchor(Anchor::LEFT | Anchor::RIGHT | Anchor::TOP | Anchor::BOTTOM);
-        layer.set_exclusive_zone(0);
+        layer.set_exclusive_zone(IGNORE_EXCLUSIVE_ZONES);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         let region =
             Region::new(&self.compositor_state).expect("could not create empty input region");
@@ -551,7 +574,8 @@ impl App {
         layer.set_size(width, height);
         layer.set_anchor(Anchor::LEFT | Anchor::BOTTOM);
         layer.set_margin(0, 0, bottom, left);
-        layer.set_exclusive_zone(0);
+        // Margins are measured from the frame, which spans the whole output.
+        layer.set_exclusive_zone(IGNORE_EXCLUSIVE_ZONES);
         // Keyboard focus stays on the frame, including while recording shortcuts.
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         layer.commit();
@@ -760,6 +784,7 @@ impl App {
                     .get(index)
                     .cloned()
                     .unwrap_or_else(|| site.url.clone());
+                self.ui.selected = Some(index);
                 log::info!("panel: opening {}", site.url);
                 self.browser.open(&site.url, &title);
                 true
@@ -802,6 +827,8 @@ impl App {
             }
             Action::SetPanelAnimation(mode) => {
                 self.config.panel_animation = mode;
+                self.browser
+                    .set_animation(mode, self.config.fade_duration_ms);
                 self.save_config();
                 true
             }
@@ -821,6 +848,8 @@ impl App {
                     return false;
                 }
                 self.config.fade_duration_ms = next;
+                self.browser
+                    .set_animation(self.config.panel_animation, next);
                 self.save_config();
                 true
             }
@@ -1216,9 +1245,13 @@ impl LayerShellHandler for App {
         let Some(panel) = panel else {
             return;
         };
+        let was_configured = panel.configured;
         panel.width = NonZeroU32::new(configure.new_size.0).map_or(panel.width, NonZeroU32::get);
         panel.height = NonZeroU32::new(configure.new_size.1).map_or(panel.height, NonZeroU32::get);
         panel.configured = true;
+        if is_frame && !was_configured {
+            log::info!("panel mapped ({}x{})", panel.width, panel.height);
+        }
         if is_frame {
             self.update_settings_geometry();
             if self.ui.settings_open && self.settings.is_none() {

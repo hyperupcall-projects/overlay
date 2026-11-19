@@ -77,8 +77,14 @@ animation to KWin), **Fade In**, and **Instant**. Fade In changes opacity at the
 final size, with a **Fade duration** control from 0–5000 ms in 25 ms steps
 (default 150 ms; 0 is immediate). The config accepts any whole millisecond
 value in that range. Changes are saved immediately and apply the next time
-the frame or settings card opens. The backdrop shares the frame's fade.
-The separate browser window retains the desktop's normal animation.
+the frame, settings card, or controlled browser window opens. The backdrop
+shares the frame's fade. Browser windows use a temporary, helper-PID-scoped
+KWin effect for Instant and Fade In, including when restored with the panels.
+Desktop Default leaves their normal desktop animation in place. The helper
+creates its effect package under `$XDG_DATA_HOME/kwin/effects` (by default
+`~/.local/share/kwin/effects`) and removes it when it exits; no desktop effects
+preferences are changed. If KWin effects are unavailable, browser windows
+fall back to the desktop's normal behavior and log a warning.
 
 Pressing the configured shortcut (for example **Meta+H**) hides the frame,
 settings, and browser together. Press it again to restore what was open. The
@@ -132,9 +138,10 @@ Meta+F ──► KWin (owns the keyboard; hosts the KGlobalAccel daemon)
 ```
 
 The frame uses a transparent, output-sized **`zwlr_layer_shell_v1`** overlay,
-anchored to all four edges with `exclusive_zone = 0`. Its input region contains
-only the eight visible pieces; the empty center and margins pass pointer input
-through. Dimming uses a separate, non-interactive top-layer surface below it.
+anchored to all four edges with `exclusive_zone = -1`, so space reserved by
+panels and other layer-shell clients cannot move or shrink it. Its input region
+contains only the eight visible pieces; the empty center and margins pass pointer
+input through. Dimming uses a separate, non-interactive top-layer surface below it.
 The browser imports that surface through `xdg-foreign` as its transient parent,
 so KWin keeps the browser above the dimming. Settings uses another overlay on
 the same output. If `xdg-foreign` is unavailable, dimming is disabled.
@@ -182,9 +189,12 @@ and everything else keeps working.
 
 ```sh
 ./target/release/overlay
+./target/release/overlay --launch
 ```
 
 It runs as a daemon (it does not exit). Press **Meta+F** to toggle the panel.
+`--launch` shows the panels immediately instead of waiting for that shortcut;
+the shortcut still hides and shows them afterwards.
 
 ## Install / autostart
 

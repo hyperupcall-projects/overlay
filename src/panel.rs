@@ -3,9 +3,10 @@
 //!
 //! The interactive layout is computed by [`layout`] and shared by the
 //! renderer and the pointer hit-testing, so what you see is exactly what you
-//! can click. Keyboard selection (`Ui::selected`) is independent of hover:
+//! can click. Website selection (`Ui::selected`) is independent of hover:
 //! opening the panel highlights the first site, Alt+J/K move within visible
-//! rows, and Enter opens the selected site. Rows render a placeholder globe
+//! rows, clicking a site selects it, and Enter opens the selected site.
+//! Rows render a placeholder globe
 //! until the background favicon fetch reports an [`Icon`].
 
 use crate::config::{Config, PanelAnimation, Rectangle, Section, Theme};
@@ -159,7 +160,7 @@ pub struct Ui {
     /// Action under the cursor, if any (drives hover highlighting).
     #[serde(skip)]
     pub hover: Option<Action>,
-    /// Keyboard-selected website, independent of pointer hover.
+    /// Selected website, updated by keyboard navigation and website activation.
     pub selected: Option<usize>,
     #[serde(skip)]
     pub recording_shortcut: bool,

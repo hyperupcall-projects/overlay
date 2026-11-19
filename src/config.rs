@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-/// Opening behavior for the layer surfaces; regular browser windows are separate.
+/// Opening behavior shared by the layer surfaces and controlled browser windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PanelAnimation {

@@ -18,6 +18,7 @@
 //! parent <handle>      stack the browser above the exported dimming surface
 //! parent               forget the previous parent (it is being unmapped)
 //! size <w> <h>         resize without replacing the webview
+//! animation <json>     opening mode and fade duration, applied on the next map
 //! ```
 //!
 //! On a navigation command the helper presents the window first (so it shows
@@ -30,7 +31,7 @@
 //! panel daemon must not go down with it. If the helper dies, the next click
 //! restarts it (at the last configured size).
 
-use crate::{geometry, persistence};
+use crate::{browser_animation, geometry, persistence};
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::io::{BufRead, BufWriter, Write};
@@ -197,6 +198,7 @@ pub struct Browser {
     /// Last window size (used for the spawn and respawned helpers).
     width: u32,
     height: u32,
+    animation: (config::PanelAnimation, u32),
     /// Whether we believe a window is on screen (drives `dismiss`).
     window_open: bool,
     parent_handle: Option<String>,
@@ -213,6 +215,8 @@ impl Browser {
     pub fn start(
         width: u32,
         height: u32,
+        animation: config::PanelAnimation,
+        fade_duration_ms: u32,
         snapshot: Snapshot,
         sender: calloop::channel::Sender<Event>,
     ) -> Self {
@@ -222,6 +226,10 @@ impl Browser {
             disabled: false,
             width: config::clamp_browser_width(width),
             height: config::clamp_browser_height(height),
+            animation: (
+                animation,
+                fade_duration_ms.min(config::MAX_FADE_DURATION_MS),
+            ),
             window_open: false,
             parent_handle: None,
             waiting_for_parent: false,
@@ -389,6 +397,15 @@ impl Browser {
         }
     }
 
+    /// Keep the live webview and pass opening preferences to future maps/respawns.
+    pub fn set_animation(&mut self, mode: config::PanelAnimation, duration_ms: u32) {
+        self.animation = (mode, duration_ms.min(config::MAX_FADE_DURATION_MS));
+        let json = serde_json::to_string(&self.animation).unwrap();
+        if !self.disabled && self.stdin.is_some() && !self.write(&format!("animation {json}\n")) {
+            self.forget_helper();
+        }
+    }
+
     /// Returns whether the command was accepted by the helper.
     fn write(&mut self, command: &str) -> bool {
         match self.stdin.as_mut() {
@@ -417,6 +434,7 @@ impl Browser {
             }
             let _ = child.wait();
             geometry::cleanup(pid);
+            browser_animation::cleanup(pid);
         }
         self.generation = self.generation.wrapping_add(1);
         self.window_open = false;
@@ -462,6 +480,8 @@ impl Browser {
                 }
                 self.child = Some(child);
                 self.stdin = stdin;
+                // FIFO ordering ensures settings arrive before any restore/open.
+                self.set_animation(self.animation.0, self.animation.1);
                 let event = Event {
                     generation: self.generation,
                     snapshot: self.snapshot.clone(),
@@ -500,6 +520,13 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
         anyhow::bail!("WebKitGTK runtime not found");
     }
     gtk::init().map_err(|err| anyhow::anyhow!("gtk::init failed: {err}"))?;
+    let mut animation_effect = match browser_animation::Effect::start() {
+        Ok(effect) => Some(effect),
+        Err(err) => {
+            log::warn!("browser opening control unavailable: {err:#}");
+            None
+        }
+    };
     let placement = geometry::Placement::default();
     let _bridge = match geometry::Bridge::start(placement.clone()) {
         Ok(bridge) => Some(bridge),
@@ -532,11 +559,20 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
     let mut last_sent = None;
     let mut next_snapshot = Instant::now();
     let mut parent_handle: Option<String> = None;
+    let mut opening = (config::PanelAnimation::DesktopDefault, 150);
+    let mut pending_present = false;
     loop {
         drain_gtk();
+        let animation_ready = animation_effect
+            .as_mut()
+            .is_none_or(|effect| effect.ready());
         let mut changed = false;
         match rx.recv_timeout(Duration::from_millis(10)) {
             Ok(line) => match parse(&line) {
+                Some(Cmd::Animation(mode, duration_ms)) => {
+                    opening = (mode, duration_ms.min(config::MAX_FADE_DURATION_MS));
+                    window.opening.set(opening);
+                }
                 Some(Cmd::Parent { handle }) => {
                     parent_handle = handle.map(str::to_string);
                     if window.inner.is_visible() {
@@ -554,7 +590,7 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
                 Some(Cmd::Resume) => {
                     if window.wanted_open.get() {
                         window.materialize();
-                        window.present(parent_handle.as_deref())?;
+                        pending_present = true;
                     }
                     changed = true;
                 }
@@ -562,7 +598,7 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
                     window.materialize();
                     window.wanted_open.set(true);
                     window.inner.set_title(title);
-                    window.present(parent_handle.as_deref())?;
+                    pending_present = true;
                     if let Err(err) = window.webview.load_url(url) {
                         log::warn!("browser load failed: {err}");
                     }
@@ -570,16 +606,19 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
                     changed = true;
                 }
                 Some(Cmd::Hide) => {
+                    pending_present = false;
                     // Keep logical visibility: only a user close cancels reopening.
                     window.inner.hide();
                     changed = true;
                 }
                 Some(Cmd::Reset(next_generation)) => {
+                    pending_present = false;
                     generation = next_generation;
                     window.teardown();
                     persistence::clear_browser_data();
                     placement.set(None);
                     window = Window::create(defaults.0, defaults.1, placement.clone())?;
+                    window.opening.set(opening);
                     initialized = true;
                     changed = true;
                     last_sent = None;
@@ -603,6 +642,12 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        if pending_present
+            && (opening.0 == config::PanelAnimation::DesktopDefault || animation_ready)
+        {
+            window.present(parent_handle.as_deref())?;
+            pending_present = false;
         }
         if initialized && (changed || Instant::now() >= next_snapshot) {
             let snapshot = window.snapshot();
@@ -633,6 +678,7 @@ struct Window {
     placement: geometry::Placement,
     pending: Option<Snapshot>,
     context: Option<wry::WebContext>,
+    opening: Rc<Cell<(config::PanelAnimation, u32)>>,
 }
 
 impl Window {
@@ -667,6 +713,24 @@ impl Window {
             .map_err(|err| anyhow::anyhow!("failed to create webview: {err}"))?;
         install_link_routing(&webview);
         inner.realize();
+        let opening = Rc::new(Cell::new((config::PanelAnimation::DesktopDefault, 150)));
+        let preferences = opening.clone();
+        // GDK rebuilds the xdg-toplevel on every map and resets its app ID.
+        // GtkWidget::map runs after GDK creates it, before the first drawn
+        // buffer makes it visible to KWin's opening effects.
+        inner.connect_map(move |widget| {
+            unsafe extern "C" {
+                fn gdk_wayland_window_set_application_id(
+                    window: *mut gtk::gdk::ffi::GdkWindow,
+                    application_id: *const std::ffi::c_char,
+                );
+            }
+            let window = widget.window().unwrap();
+            let (mode, duration_ms) = preferences.get();
+            let id = std::ffi::CString::new(browser_animation::application_id(mode, duration_ms))
+                .unwrap();
+            unsafe { gdk_wayland_window_set_application_id(window.to_glib_none().0, id.as_ptr()) };
+        });
         center_window(&inner, width, height);
         inner.show();
         inner.hide();
@@ -679,6 +743,7 @@ impl Window {
             placement,
             pending: None,
             context,
+            opening,
         })
     }
 
@@ -795,6 +860,7 @@ impl Window {
 /// Commands understood by the helper, one per stdin line.
 #[derive(Debug)]
 enum Cmd<'a> {
+    Animation(config::PanelAnimation, u32),
     Parent { handle: Option<&'a str> },
     Navigate { title: &'a str, url: &'a str },
     Hide,
@@ -805,6 +871,10 @@ enum Cmd<'a> {
 }
 
 fn parse(line: &str) -> Option<Cmd<'_>> {
+    if let Some(json) = line.strip_prefix("animation ") {
+        let (mode, duration_ms) = serde_json::from_str(json).ok()?;
+        return Some(Cmd::Animation(mode, duration_ms));
+    }
     if let Some(json) = line.strip_prefix("restore ") {
         return serde_json::from_str(json).ok().map(Cmd::Restore);
     }
@@ -898,6 +968,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn opening_preferences_survive_helper_commands_and_use_valid_app_ids() {
+        use config::PanelAnimation::*;
+        for mode in [DesktopDefault, Instant, FadeIn] {
+            for duration in [0, 150, 375, 5000] {
+                let json = serde_json::to_string(&(mode, duration)).unwrap();
+                let Some(Cmd::Animation(parsed_mode, parsed_duration)) =
+                    parse(&format!("animation {json}\n"))
+                else {
+                    panic!("opening command was rejected");
+                };
+                assert_eq!((parsed_mode, parsed_duration), (mode, duration));
+                let id = browser_animation::application_id(parsed_mode, parsed_duration);
+                let expected = match mode {
+                    DesktopDefault => "overlay-browser".into(),
+                    Instant => "overlay-browser-instant".into(),
+                    FadeIn => format!("overlay-browser-fade-{duration}"),
+                };
+                assert_eq!(id, expected);
+            }
+        }
+        assert_eq!(
+            browser_animation::application_id(FadeIn, u32::MAX),
+            "overlay-browser-fade-5000"
+        );
+        for invalid in [
+            "animation []",
+            "animation [\"unknown\",150]",
+            "animation [\"instant\",-1]",
+            "animation [\"instant\",150,1]",
+        ] {
+            assert!(parse(invalid).is_none(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn web_links_are_routed_by_parsed_hostname() {
         let current = "https://example.com/inbox";
         for target in [
@@ -952,6 +1057,7 @@ mod tests {
             disabled: false,
             width: 1280,
             height: 800,
+            animation: (config::PanelAnimation::DesktopDefault, 150),
             window_open: false,
             parent_handle: None,
             waiting_for_parent: false,

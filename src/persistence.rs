@@ -333,8 +333,7 @@ mod tests {
 
     #[test]
     fn cache_roundtrip_expiry_and_corruption() {
-        let dir =
-            std::env::temp_dir().join(format!("overlay-session-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("overlay-session-test-{}", std::process::id()));
         let store = Store {
             path: Some(dir.join("session.json")),
         };
