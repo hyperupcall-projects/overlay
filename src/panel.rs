@@ -73,8 +73,6 @@ pub enum StyleSetting {
     BottomHeight,
     Margin,
     Radius,
-    Opacity,
-    DesktopDim,
 }
 
 /// An interactive region of the panel.
@@ -417,8 +415,6 @@ pub struct Content<'a> {
     pub palette: Palette,
     pub margin: u32,
     pub border_radius: u32,
-    pub opacity: u32,
-    pub desktop_dim: u32,
     pub panel_animation: PanelAnimation,
     pub fade_duration_ms: u32,
     /// Left/right widths and top/bottom heights, in that order.
@@ -474,20 +470,86 @@ pub fn draw_rectangle(
             _ => {}
         }
     }
-    finish_surface(
-        canvas,
-        width,
-        height,
-        content.border_radius,
-        content.opacity,
-    );
+    finish_surface(canvas, width, height, content.border_radius);
 }
 
 /// A separate, non-interactive surface below the browser and the cards.
-pub fn draw_backdrop(canvas: &mut [u8], desktop_dim: u32) {
-    let alpha = ((desktop_dim.min(100) * 255 + 50) / 100) as u8;
-    for pixel in canvas.chunks_exact_mut(4) {
-        pixel.copy_from_slice(&[0, 0, 0, alpha]);
+///
+/// It paints an opaque, dark grayscale vignette: a soft circular pool of
+/// light near the upper center fading into near-black at the corners, with
+/// blurred shadows under each card to suggest depth. Nothing from the
+/// desktop shows through, so the launcher reads as a self-contained surface.
+pub fn draw_backdrop(
+    canvas: &mut [u8],
+    width: u32,
+    height: u32,
+    dimensions: [u32; 4],
+    margin: u32,
+) {
+    // Use the distance to the lower corners as the radius so the falloff is
+    // circular (equal x/y scale) and reaches its darkest shade there.
+    let cx = width as f32 * 0.5;
+    let cy = height as f32 * 0.42;
+    let radius = (cx * cx + (height as f32 - cy).powi(2)).sqrt().max(1.0);
+
+    for y in 0..height {
+        let dy = (y as f32 + 0.5 - cy) / radius;
+        for x in 0..width {
+            let dx = (x as f32 + 0.5 - cx) / radius;
+            let d = (dx * dx + dy * dy).sqrt().min(1.0);
+            let gray = if d < 0.65 {
+                lerp(84.0, 60.0, smoothstep(0.0, 0.65, d))
+            } else {
+                lerp(60.0, 16.0, smoothstep(0.65, 1.0, d))
+            } as u8;
+            let i = ((y * width + x) * 4) as usize;
+            canvas[i..i + 4].copy_from_slice(&[gray, gray, gray, 255]);
+        }
+    }
+
+    // Cast soft shadows from each card onto the vignette, like a light held
+    // above the desk. Drawn here so they also sit beneath the browser.
+    for rect in frame::layout(width, height, dimensions, margin) {
+        cast_shadow(canvas, width, height, rect.x, rect.y, rect.w, rect.h);
+    }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Darken the pixels around one card with a blurred, slightly offset shadow.
+fn cast_shadow(canvas: &mut [u8], width: u32, height: u32, x: u32, y: u32, w: u32, h: u32) {
+    const BLUR: f32 = 18.0;
+    const OFFSET: f32 = 6.0;
+    let sx = x as f32;
+    let sy = y as f32 + OFFSET;
+    let right = sx + w as f32;
+    let bottom = sy + h as f32;
+    let x0 = (sx - BLUR).max(0.0) as u32;
+    let x1 = (right + BLUR).min(width as f32) as u32;
+    let y0 = (sy - BLUR).max(0.0) as u32;
+    let y1 = (bottom + BLUR).min(height as f32) as u32;
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let fx = px as f32 + 0.5;
+            let fy = py as f32 + 0.5;
+            let dx = (sx - fx).max(fx - right).max(0.0);
+            let dy = (sy - fy).max(fy - bottom).max(0.0);
+            let strength = (1.0 - smoothstep(0.0, BLUR, dx.hypot(dy))) * 0.5;
+            if strength <= 0.0 {
+                continue;
+            }
+            let i = ((py * width + px) * 4) as usize;
+            for channel in &mut canvas[i..i + 3] {
+                *channel = (*channel as f32 * (1.0 - strength)).round() as u8;
+            }
+        }
     }
 }
 
@@ -543,13 +605,7 @@ pub fn draw_frame(canvas: &mut [u8], width: u32, height: u32, ui: &Ui, content: 
                     }
                 }
             }
-            finish_surface(
-                &mut card,
-                rect.w,
-                rect.h,
-                content.border_radius,
-                content.opacity,
-            );
+            finish_surface(&mut card, rect.w, rect.h, content.border_radius);
         }
         for y in 0..rect.h {
             let source = (y * rect.w * 4) as usize;
@@ -641,16 +697,6 @@ pub fn settings_layout(width: u32, ui: &Ui, config: &Config) -> Vec<Hit> {
             308,
             Action::BumpStyle(StyleSetting::Radius, -2),
             Action::BumpStyle(StyleSetting::Radius, 2),
-        ),
-        (
-            348,
-            Action::BumpStyle(StyleSetting::Opacity, -5),
-            Action::BumpStyle(StyleSetting::Opacity, 5),
-        ),
-        (
-            388,
-            Action::BumpStyle(StyleSetting::DesktopDim, -5),
-            Action::BumpStyle(StyleSetting::DesktopDim, 5),
         ),
         (
             506,
@@ -881,13 +927,7 @@ fn draw_contents(canvas: &mut [u8], width: u32, height: u32, ui: &Ui, content: &
         };
         draw_button(canvas, width, stride, &hit, content, &label, selected);
     }
-    finish_surface(
-        canvas,
-        width,
-        height,
-        content.border_radius,
-        content.opacity,
-    );
+    finish_surface(canvas, width, height, content.border_radius);
 }
 
 fn draw_input(
@@ -1223,12 +1263,6 @@ fn draw_settings_native(canvas: &mut [u8], width: u32, height: u32, ui: &Ui, con
                     Action::BumpStyle(StyleSetting::Radius, _) => {
                         format!("Corner radius {} px", content.border_radius)
                     }
-                    Action::BumpStyle(StyleSetting::Opacity, _) => {
-                        format!("Opacity {}%", content.opacity)
-                    }
-                    Action::BumpStyle(StyleSetting::DesktopDim, _) => {
-                        format!("Desktop dimming {}%", content.desktop_dim)
-                    }
                     _ => format!("Height {}", content.browser_height),
                 };
                 draw_stepper(canvas, width, stride, &hit, delta, &label, &label, content);
@@ -1267,13 +1301,7 @@ fn draw_settings_native(canvas: &mut [u8], width: u32, height: u32, ui: &Ui, con
             content.palette.text,
         );
     }
-    finish_surface(
-        canvas,
-        width,
-        height,
-        content.border_radius,
-        content.opacity,
-    );
+    finish_surface(canvas, width, height, content.border_radius);
 }
 
 fn rounded_fill(
@@ -1309,10 +1337,9 @@ fn rounded_fill(
 }
 
 /// Clip corners with subpixel coverage and keep ARGB channels premultiplied.
-/// Alpha zero exposes the desktop; 100% opacity leaves the interior opaque.
-fn finish_surface(canvas: &mut [u8], width: u32, height: u32, radius: u32, opacity: u32) {
+/// Interiors stay fully opaque; only the clipped corners are translucent.
+fn finish_surface(canvas: &mut [u8], width: u32, height: u32, radius: u32) {
     let r = radius.min(width / 2).min(height / 2) as f32;
-    let opacity = opacity.min(100) as f32 / 100.0;
     for y in 0..height {
         for x in 0..width {
             let px = x as f32 + 0.5;
@@ -1324,10 +1351,9 @@ fn finish_surface(canvas: &mut [u8], width: u32, height: u32, radius: u32, opaci
             } else {
                 1.0
             };
-            let scale = coverage * opacity;
             let i = ((y * width + x) * 4) as usize;
             for channel in &mut canvas[i..i + 4] {
-                *channel = (*channel as f32 * scale).round() as u8;
+                *channel = (*channel as f32 * coverage).round() as u8;
             }
         }
     }
@@ -1823,7 +1849,7 @@ mod tests {
         }
         for (width, height) in [(SETTINGS_WIDTH, SETTINGS_HEIGHT), (320, 400)] {
             let hits = settings_hits(width, height, &ui, &Config::default());
-            assert_eq!(hits.len(), 34);
+            assert_eq!(hits.len(), 30);
             for delta in [-1, 1] {
                 assert!(hits
                     .iter()
@@ -1843,11 +1869,11 @@ mod tests {
                     .iter()
                     .any(|h| h.action == Action::BumpFadeDuration(delta)));
             }
-            for delta in [-5, 5] {
-                assert!(hits
-                    .iter()
-                    .any(|h| h.action == Action::BumpStyle(StyleSetting::DesktopDim, delta)));
-            }
+            // The retired opacity/desktop-dimming steppers left no controls
+            // between "Spacing and style" and "Panel opening".
+            assert!(!hits.iter().any(|h| {
+                matches!(h.action, Action::BumpStyle(_, _)) && (348..450).contains(&h.y)
+            }));
             for hit in &hits {
                 assert_eq!(
                     hit_test(
@@ -1878,17 +1904,15 @@ mod tests {
     }
 
     #[test]
-    fn rounded_opacity_mask_preserves_premultiplied_alpha() {
+    fn rounded_mask_preserves_premultiplied_alpha() {
         let (w, h) = (80, 60);
-        for (radius, opacity) in [(0, 100), (16, 100), (16, 50), (48, 20)] {
+        for radius in [0, 16, 48] {
             let mut canvas = vec![0u8; (w * h * 4) as usize];
             fill(&mut canvas, w as usize * 4, 0, 0, w, h, 0xFF80A0C0);
-            finish_surface(&mut canvas, w, h, radius, opacity);
+            finish_surface(&mut canvas, w, h, radius);
             let center = ((h / 2 * w + w / 2) * 4) as usize;
-            assert_eq!(
-                canvas[center + 3],
-                (255.0 * opacity as f32 / 100.0).round() as u8
-            );
+            // Interiors are always fully opaque, regardless of corner radius.
+            assert_eq!(canvas[center + 3], 255);
             if radius > 0 {
                 assert_eq!(&canvas[..4], &[0, 0, 0, 0]);
             } else {
@@ -1906,9 +1930,9 @@ mod tests {
     }
 
     #[test]
-    fn dimming_is_isolated_from_the_transparent_browser_overlay() {
+    fn backdrop_is_opaque_grayscale_and_frame_center_stays_transparent() {
         let ui = Ui::default();
-        let mut content = Content {
+        let content = Content {
             config: &Config {
                 sections: vec![],
                 ..Config::default()
@@ -1923,8 +1947,6 @@ mod tests {
             shortcut: "Meta+F",
             margin: 12,
             border_radius: 16,
-            opacity: 100,
-            desktop_dim: 50,
             panel_animation: PanelAnimation::DesktopDefault,
             fade_duration_ms: 150,
             dimensions: [48, 48, 40, 40],
@@ -1935,23 +1957,89 @@ mod tests {
             let i = ((y * w + x) * 4) as usize;
             canvas[i..i + 4].try_into().unwrap()
         };
-        for (dim, alpha) in [(0, 0), (20, 51), (50, 128), (100, 255), (u32::MAX, 255)] {
-            content.desktop_dim = dim;
-            draw_backdrop(&mut canvas, dim);
-            assert!(canvas.chunks_exact(4).all(|p| p == [0, 0, 0, alpha]));
-            draw_frame(&mut canvas, w, h, &ui, &content);
-            // Everything above a browser except the cards must stay transparent,
-            // even with 100% dimming. This is the stacking regression.
-            for (x, y) in [(160, 120), (0, 0), (66, 32), (12, 12)] {
-                assert_eq!(pixel(&canvas, x, y), [0; 4]);
-            }
-            assert_eq!(pixel(&canvas, 160, 32), content.palette.bg.to_le_bytes());
-            let hits = frame_layout(w, h, content.dimensions, content.margin, &ui, &[]);
-            assert_eq!(hit_test(&hits, 160.0, 120.0), None);
-        }
-        content.opacity = 50;
+
+        draw_backdrop(&mut canvas, w, h, content.dimensions, content.margin);
+        // The desktop never shows through and the vignette stays neutral gray.
+        assert!(canvas
+            .chunks_exact(4)
+            .all(|p| { p[0] == p[1] && p[1] == p[2] && p[3] == 255 }));
+        // Circular falloff: the center is lighter than the lower corners.
+        assert!(pixel(&canvas, 160, 120)[0] > pixel(&canvas, 0, 0)[0]);
+        assert!(pixel(&canvas, 160, 120)[0] > pixel(&canvas, 0, h - 1)[0]);
+
         draw_frame(&mut canvas, w, h, &ui, &content);
-        assert_eq!(pixel(&canvas, 160, 32)[3], 128);
+        // Everything above a browser except the cards must stay transparent.
+        for (x, y) in [(160, 120), (0, 0), (66, 32), (12, 12)] {
+            assert_eq!(pixel(&canvas, x, y), [0; 4]);
+        }
+        assert_eq!(pixel(&canvas, 160, 32), content.palette.bg.to_le_bytes());
+        let hits = frame_layout(w, h, content.dimensions, content.margin, &ui, &[]);
+        assert_eq!(hit_test(&hits, 160.0, 120.0), None);
+    }
+
+    /// Renders the full composition (opaque backdrop + cards + a stand-in
+    /// browser window) to `/tmp/backdrop_render.png` for visual inspection.
+    #[test]
+    fn render_sample_backdrop_png() {
+        let font = TextRenderer::load().expect("a system font");
+        let (w, h) = (1600, 900);
+        let dimensions = [64, 64, 64, 64];
+        let margin = 12;
+        let mut canvas = vec![0u8; (w * h * 4) as usize];
+        draw_backdrop(&mut canvas, w, h, dimensions, margin);
+
+        // Stand-in browser window, like the one stacked above the backdrop.
+        let (bx, by, bw, bh) = (280u32, 150u32, 1040u32, 600u32);
+        for y in by..by + bh {
+            for x in bx..bx + bw {
+                let i = ((y * w + x) * 4) as usize;
+                canvas[i..i + 4].copy_from_slice(&[255, 255, 255, 255]);
+            }
+        }
+
+        let ui = Ui::default();
+        let content = Content {
+            config: &Config::default(),
+            labels: &[],
+            icons: &[],
+            font: Some(&font),
+            browser_width: 1280,
+            browser_height: 800,
+            theme: Theme::System,
+            palette: Palette::new(false),
+            shortcut: "Meta+F",
+            margin,
+            border_radius: 16,
+            panel_animation: PanelAnimation::DesktopDefault,
+            fade_duration_ms: 150,
+            dimensions,
+        };
+        let mut frame = vec![0u8; (w * h * 4) as usize];
+        draw_frame(&mut frame, w, h, &ui, &content);
+        for i in (0..canvas.len()).step_by(4) {
+            let a = u32::from(frame[i + 3]);
+            if a == 0 {
+                continue;
+            }
+            for c in 0..3 {
+                let blended =
+                    (u32::from(frame[i + c]) * a + u32::from(canvas[i + c]) * (255 - a)) / 255;
+                canvas[i + c] = blended as u8;
+            }
+        }
+
+        let rgba: Vec<u8> = canvas
+            .chunks_exact(4)
+            .flat_map(|p| [p[2], p[1], p[0], p[3]])
+            .collect();
+        image::save_buffer(
+            "/tmp/backdrop_render.png",
+            &rgba,
+            w,
+            h,
+            image::ColorType::Rgba8,
+        )
+        .expect("failed to write /tmp/backdrop_render.png");
     }
 
     /// Renders a realistic panel (websites expanded, fetched icon +
@@ -2002,8 +2090,6 @@ mod tests {
             shortcut: "Meta+F",
             margin: 12,
             border_radius: 16,
-            opacity: 100,
-            desktop_dim: 20,
             panel_animation: PanelAnimation::DesktopDefault,
             fade_duration_ms: 150,
             dimensions: [64; 4],
@@ -2031,16 +2117,7 @@ mod tests {
         // the desktop, rather than only the legacy website-list renderer.
         let (w, h) = (1200, 800);
         let mut frame = vec![0; (w * h * 4) as usize];
-        draw_frame(
-            &mut frame,
-            w,
-            h,
-            &ui,
-            &Content {
-                desktop_dim: 0,
-                ..content
-            },
-        );
+        draw_frame(&mut frame, w, h, &ui, &content);
         let rects = frame::layout(w, h, content.dimensions, content.margin);
         for rect in &rects {
             let center = (((rect.y + rect.h / 2) * w + rect.x + rect.w / 2) * 4) as usize;

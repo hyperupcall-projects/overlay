@@ -16,16 +16,14 @@ bottom_height = 64
 theme = "system"
 
 # Floating-panel appearance (also adjustable in Settings).
-# Shared margin between every piece and the screen edges: 0-80 px; corner radius: 0-48 px; opacity: 20-100%.
-# 100% opacity means no transparency.
+# Shared margin between every piece and the screen edges: 0-80 px; corner radius: 0-48 px.
+# Card interiors are always fully opaque; opacity and desktop dimming are fixed.
 margin = 12
 border_radius = 16
-opacity = 100
 
-# Dim the desktop behind the frame while shown: 0-100%, default 20%.
-# 0 disables dimming; 100 makes the backdrop black. Gaps remain clickable.
-# Independent of panel opacity; adjustable in Settings in 5% steps.
-desktop_dim = 20
+# The backdrop is an opaque dark gray circular vignette with soft card shadows,
+# so nothing on the desktop shows through. It covers the whole output while the
+# launcher is shown; gaps remain clickable.
 
 # Layer-panel opening: "desktop_default", "fade_in", or "instant".
 # Desktop Default leaves animation to KWin. Custom modes skip its standard

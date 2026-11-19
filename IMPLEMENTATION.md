@@ -77,11 +77,14 @@ The backdrop clones the frame's timeline; settings starts its own. Hiding
 destroys the surfaces, so late callbacks cannot animate a reopened panel.
 The browser helper is unaffected. Settings changes apply on the next open.
 
-Dimming uses a separate `Layer::Top` surface, filled with premultiplied black
-controlled by `desktop_dim` (0–100 percent, default 20), with an empty input
-region and no keyboard focus. Cards live in a transparent `Layer::Overlay`
-surface. Keeping the backdrop out of the cards' canvas is essential: otherwise
-the overlay dims ordinary browser windows beneath it.
+The backdrop uses a separate `Layer::Top` surface with an empty input region
+and no keyboard focus. `src/panel.rs::draw_backdrop` paints it fully opaque:
+a circular grayscale vignette (lighter upper center fading to near-black at
+the corners) plus blurred drop shadows cast by each card. Nothing on the
+desktop shows through. Cards live in a transparent `Layer::Overlay` surface;
+keeping the backdrop out of the cards' canvas is essential so the overlay
+cannot obscure ordinary browser windows beneath it. Card interiors are always
+fully opaque — `finish_surface` only feathers the rounded corners.
 
 KWin supports exporting layer-shell surfaces as toplevel equivalents through
 `zxdg_exporter_v2`. The backdrop is exported and its handle sent to the GTK
@@ -94,7 +97,8 @@ geometry polling or transparent holes. The GTK import is reapplied to resized
 windows and restarted helpers. An early navigation request waits for the
 exported handle; hiding cancels any pending request and destroys the export.
 All surfaces share the frame's actual output. Without `xdg-foreign`, the
-launcher disables dimming and continues to open the browser normally.
+launcher skips the opaque backdrop so it cannot cover the browser, and opens
+the browser normally.
 
 After navigation the cards accept keyboard focus on demand, allowing browser
 typing. Opening the launcher and recording a shortcut retain exclusive focus.
@@ -856,18 +860,21 @@ The browser process stays warm unless it crashes or session retention expires.
 
 ### Floating panel appearance
 
-The default sidebar width is 200 logical pixels. `margin` (default 12),
-`border_radius` (default 16), and `opacity` (default 100 percent) are saved
-scalar config fields shared by the sidebar and settings surface. Settings
-steppers update both surfaces immediately. Layer-shell margins expose the
-desktop around the sidebar, while the settings card stays on the same output
-and is offset by sidebar width plus two margins on the left. Changing margins
-commits new geometry on the existing surfaces. Config loading bounds margin
-to 0–80, radius to 0–48, and opacity to 20–100.
+The default sidebar width is 200 logical pixels. `margin` (default 12) and
+`border_radius` (default 16) are saved scalar config fields shared by the
+sidebar and settings surface; Settings steppers update both surfaces
+immediately. Opacity and desktop dimming were removed from the settings UI and
+config: card interiors are always fully opaque and the backdrop is a fixed,
+opaque dark gray circular vignette. Layer-shell margins expose the desktop
+around the sidebar, while the settings card stays on the same output and is
+offset by sidebar width plus two margins on the left. Changing margins commits
+new geometry on the existing surfaces. Config loading bounds margin to 0–80 and
+radius to 0–48.
 
 After content rendering, `finish_surface` clips rounded corners with subpixel
-coverage and scales all BGRA channels together for premultiplied ARGB opacity.
-At 100 percent the interior remains opaque; at radius zero corners are square.
+coverage and scales all BGRA channels by that coverage, keeping the premultiplied
+ARGB channels consistent. The interior remains fully opaque; at radius zero
+corners are square.
 
 ### Shortcut recording and live rebinding
 

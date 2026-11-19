@@ -58,16 +58,18 @@ small, dimensions are fitted proportionally; saved preferences remain unchanged.
 The settings card also scales down to stay on screen.
 
 The existing **Light**, **Dark**, and **System** appearance choices, corner
-radius, opacity, browser window size, and shortcut recorder are retained.
-All changes apply immediately and persist to the config file. Margin (0–80 px),
-corner radius (0–48 px), and opacity (20–100%) apply to every frame piece and the
-settings card. At 100% opacity the card interiors are fully opaque.
-**Desktop dimming** adjusts the black backdrop independently, from 0% (off) to
-100% (black) in 5% steps, defaulting to 20%. It updates and saves immediately,
-covers the center, gaps, and rounded corners, and disappears with the frame.
-Opaque panels retain their normal appearance, and the dimmed gaps remain clickable.
-The launcher’s browser windows stay above the dimming, including after moves,
-resizes, and reopening. Panels and settings stay above the browser.
+radius, browser window size, and shortcut recorder are retained.
+All changes apply immediately and persist to the config file. Margin (0–80 px)
+and corner radius (0–48 px) apply to every frame piece and the settings card.
+Card interiors are always fully opaque; the "Spacing and style" settings no
+longer offer opacity or desktop-dimming controls.
+
+The launcher uses a fixed, opaque dark backdrop instead: a soft circular gray
+vignette with blurred shadows under the cards, so nothing on the desktop shows
+through the center or the gaps. It covers the whole output, disappears with the
+frame, and leaves the gaps clickable. The launcher’s browser windows stay above
+the backdrop, including after moves, resizes, and reopening. Panels and settings
+stay above the browser.
 System mode follows live desktop changes through the
 [XDG Settings portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html),
 using light mode when no preference is available.
@@ -141,10 +143,11 @@ The frame uses a transparent, output-sized **`zwlr_layer_shell_v1`** overlay,
 anchored to all four edges with `exclusive_zone = -1`, so space reserved by
 panels and other layer-shell clients cannot move or shrink it. Its input region
 contains only the eight visible pieces; the empty center and margins pass pointer
-input through. Dimming uses a separate, non-interactive top-layer surface below it.
-The browser imports that surface through `xdg-foreign` as its transient parent,
-so KWin keeps the browser above the dimming. Settings uses another overlay on
-the same output. If `xdg-foreign` is unavailable, dimming is disabled.
+input through. The opaque backdrop uses a separate, non-interactive top-layer
+surface below it. The browser imports that surface through `xdg-foreign` as its
+transient parent, so KWin keeps the browser above the backdrop. Settings uses
+another overlay on the same output. If `xdg-foreign` is unavailable, the backdrop
+is skipped so it cannot cover the browser.
 
 ## Requirements
 
@@ -235,8 +238,6 @@ top_height = 64    # logical pixels; 40-400
 bottom_height = 64 # independent of the top height
 margin = 12        # 0-80 px shared gap between pieces and screen edges
 border_radius = 16 # 0-48 px rounded corners
-opacity = 100      # 20-100%; 100 means no transparency
-desktop_dim = 20   # 0-100%; 0 disables desktop dimming
 panel_animation = "desktop_default" # "desktop_default", "fade_in", or "instant"
 fade_duration_ms = 150 # 0-5000 ms; used by "fade_in"
 persist_changes_to_panels = "0" # always; also 1m, 5m, 10m, 15m, 30m, 1hr, 2hr, 4hr, login_logout, restart

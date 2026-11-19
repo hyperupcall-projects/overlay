@@ -223,10 +223,6 @@ pub struct Config {
     pub margin: u32,
     /// Corner radius of every frame piece and the settings card.
     pub border_radius: u32,
-    /// Panel opacity as a percentage (100 is fully opaque).
-    pub opacity: u32,
-    /// Black backdrop strength while the launcher is visible (0 disables it).
-    pub desktop_dim: u32,
     pub panel_animation: PanelAnimation,
     /// Fade-in duration in milliseconds (0 shows immediately).
     pub fade_duration_ms: u32,
@@ -254,8 +250,6 @@ impl Default for Config {
             bottom_height: 64,
             margin: 12,
             border_radius: 16,
-            opacity: 100,
-            desktop_dim: 20,
             panel_animation: PanelAnimation::DesktopDefault,
             fade_duration_ms: 150,
             persist_changes_to_panels: Persistence::Always,
@@ -332,8 +326,6 @@ impl Config {
                 config.bottom_height = config.bottom_height.clamp(40, 400);
                 config.margin = config.margin.min(80);
                 config.border_radius = config.border_radius.min(48);
-                config.opacity = config.opacity.clamp(20, 100);
-                config.desktop_dim = config.desktop_dim.min(100);
                 config.fade_duration_ms = config.fade_duration_ms.min(MAX_FADE_DURATION_MS);
                 config.browser_width = clamp_browser_width(config.browser_width);
                 config.browser_height = clamp_browser_height(config.browser_height);
@@ -456,7 +448,6 @@ mod tests {
         assert_eq!(parsed.right_width, original.right_width);
         assert_eq!(parsed.top_height, original.top_height);
         assert_eq!(parsed.bottom_height, original.bottom_height);
-        assert_eq!(parsed.desktop_dim, original.desktop_dim);
         assert_eq!(parsed.shortcut, original.shortcut);
         assert_eq!(parsed.browser_width, 1280);
         assert_eq!(parsed.browser_height, 800);
@@ -495,20 +486,13 @@ mod tests {
     fn appearance_defaults_and_custom_values_round_trip() {
         let default: Config = toml::from_str("").unwrap();
         assert_eq!(default.left_width, 64);
-        assert_eq!(default.desktop_dim, 20);
-        assert_eq!(
-            (default.margin, default.border_radius, default.opacity),
-            (12, 16, 100)
-        );
+        assert_eq!((default.margin, default.border_radius), (12, 16));
+        // Retired `opacity`/`desktop_dim` keys stay readable but have no effect.
         let custom: Config =
             toml::from_str("margin = 24\nborder_radius = 32\nopacity = 75\ndesktop_dim = 45")
                 .unwrap();
         let parsed: Config = toml::from_str(&toml::to_string(&custom).unwrap()).unwrap();
-        assert_eq!(
-            (parsed.margin, parsed.border_radius, parsed.opacity),
-            (24, 32, 75)
-        );
-        assert_eq!(parsed.desktop_dim, 45);
+        assert_eq!((parsed.margin, parsed.border_radius), (24, 32));
     }
 
     #[test]

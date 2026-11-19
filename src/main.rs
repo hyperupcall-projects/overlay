@@ -134,7 +134,7 @@ fn main() -> Result<()> {
     let exporter = globals.bind::<ZxdgExporterV2, _, _>(&qh, 1..=1, ()).ok();
     if exporter.is_none() {
         log::warn!(
-            "xdg-foreign unavailable; desktop dimming disabled to keep the browser unobscured"
+            "xdg-foreign unavailable; opaque backdrop disabled so the browser stays visible"
         );
     }
     let shm = Shm::bind(&globals, &qh).context("wl_shm is not available")?;
@@ -619,8 +619,6 @@ impl App {
             palette: panel::Palette::new(self.config.theme.is_dark(self.system_dark)),
             margin: self.config.margin,
             border_radius: self.config.border_radius,
-            opacity: self.config.opacity,
-            desktop_dim: self.config.desktop_dim,
             panel_animation: self.config.panel_animation,
             fade_duration_ms: self.config.fade_duration_ms,
             dimensions: self.dimensions(),
@@ -653,7 +651,9 @@ impl App {
                 )
                 .expect("failed to create a shared-memory buffer");
             match kind {
-                SurfaceKind::Backdrop => panel::draw_backdrop(canvas, content.desktop_dim),
+                SurfaceKind::Backdrop => {
+                    panel::draw_backdrop(canvas, width, height, content.dimensions, content.margin)
+                }
                 SurfaceKind::Settings => {
                     panel::draw_settings(canvas, width, height, &self.ui, &content)
                 }
@@ -861,8 +861,6 @@ impl App {
                     panel::StyleSetting::BottomHeight => (&mut self.config.bottom_height, 40, 400),
                     panel::StyleSetting::Margin => (&mut self.config.margin, 0, 80),
                     panel::StyleSetting::Radius => (&mut self.config.border_radius, 0, 48),
-                    panel::StyleSetting::Opacity => (&mut self.config.opacity, 20, 100),
-                    panel::StyleSetting::DesktopDim => (&mut self.config.desktop_dim, 0, 100),
                 };
                 let next = (i64::from(*value) + i64::from(delta)).clamp(min, max) as u32;
                 if next == *value {
