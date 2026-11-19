@@ -93,18 +93,18 @@ install -d "$CONFIG_DIR"
 if [ -e "${CONFIG_DIR}/config.toml" ]; then
   info "keeping existing config at ${CONFIG_DIR}/config.toml"
 else
-  install -m 0644 "${REPO_ROOT}/contrib/config.toml" "${CONFIG_DIR}/config.toml"
+  install -m 0644 "${REPO_ROOT}/resources/config.toml" "${CONFIG_DIR}/config.toml"
   info "installed default config to ${CONFIG_DIR}/config.toml"
 fi
 
 # --- install unit ----------------------------------------------------------
 install -d "$UNIT_DIR"
 if [ "$BINDIR" = "${HOME}/.local/bin" ]; then
-  install -m 0644 "${REPO_ROOT}/contrib/${UNIT_NAME}" "${UNIT_DIR}/${UNIT_NAME}"
+  install -m 0644 "${REPO_ROOT}/resources/${UNIT_NAME}" "${UNIT_DIR}/${UNIT_NAME}"
 else
   # Rewrite ExecStart so a custom --prefix still points at the right binary.
   sed "s|^ExecStart=.*|ExecStart=${BINARY}|" \
-    "${REPO_ROOT}/contrib/${UNIT_NAME}" > "${UNIT_DIR}/${UNIT_NAME}"
+    "${REPO_ROOT}/resources/${UNIT_NAME}" > "${UNIT_DIR}/${UNIT_NAME}"
   chmod 0644 "${UNIT_DIR}/${UNIT_NAME}"
 fi
 info "installed ${UNIT_DIR}/${UNIT_NAME}"

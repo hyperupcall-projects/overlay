@@ -202,13 +202,13 @@ Run the installer, which builds the binary, installs it to `~/.local/bin`, and
 sets up a **systemd user service** bound to the graphical session:
 
 ```sh
-./contrib/install.sh
+./scripts/install.sh
 ```
 
 That is equivalent to:
 
 - copy `target/release/overlay` to `~/.local/bin/overlay`,
-- copy `contrib/overlay.service` to `~/.config/systemd/user/`,
+- copy `resources/overlay.service` to `~/.config/systemd/user/`,
 - `systemctl --user enable --now overlay.service`.
 
 The service starts with `graphical-session.target` and stops with it. It is
@@ -221,12 +221,12 @@ not start now), `--uninstall`.
 > The installer uses systemd rather than the XDG autostart protocol. On Plasma 6
 > the autostart path is backed by systemd anyway, but its generated unit
 > hardcodes `Restart=no`, so a crashed daemon would not come back until the next
-> login. (`contrib/overlay.desktop` is retained for reference but is not used
+> login. (`resources/overlay.desktop` is retained for reference but is not used
 > by the installer.)
 
 ## Configuration
 
-Copy `contrib/config.toml` to `~/.config/overlay/config.toml`:
+Copy `resources/config.toml` to `~/.config/overlay/config.toml`:
 
 ```toml
 left_width = 64    # logical pixels; 48-800
@@ -268,7 +268,7 @@ omitted, the two localhost entries above are used. Set `sections = []` before
 any tables for an empty frame. Favicons are fetched in the background — the page's
 `<link rel="icon">` first, then `/favicon.ico`; PNG/ICO/JPEG/GIF/WebP and SVG
 are all supported — and each row shows a globe placeholder until its icon
-arrives. See `contrib/config.toml` for the annotated example.
+arrives. See `resources/config.toml` for the annotated example.
 
 `shortcut` is only the *default*. Once registered, the action also appears in
 **System Settings → Shortcuts** (component "Overlay"), where the user can
