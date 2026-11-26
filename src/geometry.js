@@ -1,8 +1,43 @@
 // Loaded only for the lifetime of a browser helper. Never matches other apps.
 (function () {
     const service = "__SERVICE__";
+    const target = __TARGET__;
     function watch(window) {
         if (window.pid !== __PID__ || !window.normalWindow) return;
+        if (target) {
+            // KWin owns server decorations on Wayland; GTK's decoration hint
+            // can be ignored after the pre-warmed window has been realized.
+            // Fit the outer window frame. Guard
+            // synchronous signals and skip equal geometry to avoid resize loops.
+            let applying = false;
+            function fit() {
+                if (applying || window.deleted) return;
+                applying = true;
+                try {
+                    window.noBorder = true;
+                    window.fullScreen = false;
+                    window.setMaximize(false, false);
+                    const g = window.frameGeometry;
+                    // Fractional output scaling can round to a physical pixel
+                    // (for example 650 logical px becomes 650.4 at 125%).
+                    if (Math.abs(g.x - target.x) > 0.5 || Math.abs(g.y - target.y) > 0.5
+                        || Math.abs(g.width - target.width) > 0.5
+                        || Math.abs(g.height - target.height) > 0.5) {
+                        window.frameGeometry = target;
+                    }
+                } finally {
+                    applying = false;
+                }
+            }
+            window.frameGeometryChanged.connect(fit);
+            window.fullScreenChanged.connect(fit);
+            window.decorationChanged.connect(fit);
+            if (window.maximizedChanged) window.maximizedChanged.connect(fit);
+            fit();
+            // Forced placement must not replace the user's normal geometry.
+            return;
+        }
+        window.noBorder = false;
         let restoring = true;
         function record() {
             if (restoring || window.deleted) return;

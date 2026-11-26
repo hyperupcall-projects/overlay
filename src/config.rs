@@ -233,6 +233,8 @@ pub struct Config {
     pub browser_width: u32,
     /// Default browser window height.
     pub browser_height: u32,
+    /// Keep app windows fitted to the center of the surrounding panels.
+    pub force_fullscreen: bool,
     /// Appearance: light, dark, or system.
     pub theme: Theme,
     /// Ordered sections for the four rectangles; corner boxes stay fixed.
@@ -256,6 +258,7 @@ impl Default for Config {
             shortcut: "Meta+F".to_string(),
             browser_width: 1280,
             browser_height: 800,
+            force_fullscreen: false,
             theme: Theme::System,
             sections: vec![Section {
                 rectangle: Rectangle::Left,
@@ -451,10 +454,23 @@ mod tests {
         assert_eq!(parsed.shortcut, original.shortcut);
         assert_eq!(parsed.browser_width, 1280);
         assert_eq!(parsed.browser_height, 800);
+        assert!(!parsed.force_fullscreen);
         assert_eq!(parsed.sections[0].websites.len(), 2);
         assert_eq!(parsed.sections[0].websites[0].url, "http://localhost:6005/");
         assert_eq!(parsed.sections[0].websites[1].url, "http://localhost:6006/");
         assert_eq!(parsed.sections[0].websites[0].title, None);
+    }
+
+    #[test]
+    fn force_fullscreen_is_opt_in_and_persists() {
+        assert!(
+            !Config::parse("browser_width = 1600")
+                .unwrap()
+                .force_fullscreen
+        );
+        let config = Config::parse("force_fullscreen = true").unwrap();
+        let saved = toml::to_string_pretty(&config).unwrap();
+        assert!(Config::parse(&saved).unwrap().force_fullscreen);
     }
 
     #[test]

@@ -18,6 +18,7 @@
 //! parent <handle>      stack the browser above the exported dimming surface
 //! parent               forget the previous parent (it is being unmapped)
 //! size <w> <h>         resize without replacing the webview
+//! fit <json>           constrain apps to the frame's center (null disables)
 //! animation <json>     opening mode and fade duration, applied on the next map
 //! ```
 //!
@@ -199,6 +200,7 @@ pub struct Browser {
     width: u32,
     height: u32,
     animation: (config::PanelAnimation, u32),
+    app_bounds: Option<geometry::Geometry>,
     /// Whether we believe a window is on screen (drives `dismiss`).
     window_open: bool,
     parent_handle: Option<String>,
@@ -230,6 +232,7 @@ impl Browser {
                 animation,
                 fade_duration_ms.min(config::MAX_FADE_DURATION_MS),
             ),
+            app_bounds: None,
             window_open: false,
             parent_handle: None,
             waiting_for_parent: false,
@@ -406,6 +409,22 @@ impl Browser {
         }
     }
 
+    /// Keep the current page while fitting every open/respawn to the app area.
+    pub fn set_app_bounds(&mut self, bounds: Option<geometry::Geometry>) {
+        if self.app_bounds == bounds {
+            return;
+        }
+        self.app_bounds = bounds;
+        self.send_app_bounds();
+    }
+
+    fn send_app_bounds(&mut self) {
+        let json = serde_json::to_string(&self.app_bounds).unwrap();
+        if !self.disabled && self.stdin.is_some() && !self.write(&format!("fit {json}\n")) {
+            self.forget_helper();
+        }
+    }
+
     /// Returns whether the command was accepted by the helper.
     fn write(&mut self, command: &str) -> bool {
         match self.stdin.as_mut() {
@@ -482,6 +501,7 @@ impl Browser {
                 self.stdin = stdin;
                 // FIFO ordering ensures settings arrive before any restore/open.
                 self.set_animation(self.animation.0, self.animation.1);
+                self.send_app_bounds();
                 let event = Event {
                     generation: self.generation,
                     snapshot: self.snapshot.clone(),
@@ -528,7 +548,7 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
         }
     };
     let placement = geometry::Placement::default();
-    let _bridge = match geometry::Bridge::start(placement.clone()) {
+    let mut bridge = match geometry::Bridge::start(placement.clone()) {
         Ok(bridge) => Some(bridge),
         Err(err) => {
             log::warn!("browser placement restoration unavailable: {err:#}");
@@ -560,6 +580,7 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
     let mut next_snapshot = Instant::now();
     let mut parent_handle: Option<String> = None;
     let mut opening = (config::PanelAnimation::DesktopDefault, 150);
+    let mut app_bounds = None;
     let mut pending_present = false;
     loop {
         drain_gtk();
@@ -569,6 +590,16 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
         let mut changed = false;
         match rx.recv_timeout(Duration::from_millis(10)) {
             Ok(line) => match parse(&line) {
+                Some(Cmd::Fit(bounds)) => {
+                    app_bounds = bounds;
+                    window.set_app_bounds(bounds);
+                    if let Some(bridge) = &mut bridge {
+                        if let Err(err) = bridge.set_target(bounds) {
+                            log::warn!("browser could not fit the frame: {err:#}");
+                        }
+                    }
+                    changed = true;
+                }
                 Some(Cmd::Animation(mode, duration_ms)) => {
                     opening = (mode, duration_ms.min(config::MAX_FADE_DURATION_MS));
                     window.opening.set(opening);
@@ -619,6 +650,7 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
                     placement.set(None);
                     window = Window::create(defaults.0, defaults.1, placement.clone())?;
                     window.opening.set(opening);
+                    window.set_app_bounds(app_bounds);
                     initialized = true;
                     changed = true;
                     last_sent = None;
@@ -631,7 +663,9 @@ pub fn run(width: Option<u32>, height: Option<u32>) -> anyhow::Result<()> {
                     window.height = height;
                     // GTK negotiates an xdg-toplevel resize. Keep the same view
                     // so editing the default size does not reload the page.
-                    window.inner.resize(width as i32, height as i32);
+                    if app_bounds.is_none() {
+                        window.inner.resize(width as i32, height as i32);
+                    }
                     if let Some(snapshot) = &mut window.pending {
                         snapshot.width = width;
                         snapshot.height = height;
@@ -679,6 +713,7 @@ struct Window {
     pending: Option<Snapshot>,
     context: Option<wry::WebContext>,
     opening: Rc<Cell<(config::PanelAnimation, u32)>>,
+    app_bounds: Option<geometry::Geometry>,
 }
 
 impl Window {
@@ -744,14 +779,38 @@ impl Window {
             pending: None,
             context,
             opening,
+            app_bounds: None,
         })
+    }
+
+    fn set_app_bounds(&mut self, bounds: Option<geometry::Geometry>) {
+        if self.app_bounds.is_none() && bounds.is_some() && self.pending.is_none() {
+            let (width, height) = self.inner.size();
+            self.width = width.max(1) as u32;
+            self.height = height.max(1) as u32;
+        }
+        self.app_bounds = bounds;
+        self.inner.set_decorated(bounds.is_none());
+        // KWin must be able to size the outer frame. A non-resizable GTK
+        // window fixes min/max to its *content* size, so a server title bar
+        // makes the outer window too tall and prevents KWin correcting it.
+        self.inner.set_resizable(true);
+        if let Some(bounds) = bounds {
+            self.inner.unfullscreen();
+            self.inner.unmaximize();
+            self.inner.resize(bounds.width as i32, bounds.height as i32);
+        } else {
+            self.inner.resize(self.width as i32, self.height as i32);
+        }
     }
 
     fn restore(&mut self, snapshot: Snapshot) {
         self.wanted_open.set(snapshot.open);
         self.width = config::clamp_browser_width(snapshot.width);
         self.height = config::clamp_browser_height(snapshot.height);
-        self.inner.resize(self.width as i32, self.height as i32);
+        if self.app_bounds.is_none() {
+            self.inner.resize(self.width as i32, self.height as i32);
+        }
         self.inner.set_title(&snapshot.title);
         self.placement.set(snapshot.geometry);
         self.pending = Some(snapshot);
@@ -790,10 +849,10 @@ impl Window {
                 view.load_uri(&url);
             }
         }
-        if snapshot.maximized {
+        if snapshot.maximized && self.app_bounds.is_none() {
             self.inner.maximize();
         }
-        if snapshot.fullscreen {
+        if snapshot.fullscreen && self.app_bounds.is_none() {
             self.inner.fullscreen();
         }
     }
@@ -810,7 +869,11 @@ impl Window {
         if let Some(snapshot) = &self.pending {
             return snapshot.clone();
         }
-        let (width, height) = self.inner.size();
+        let (width, height) = if self.app_bounds.is_some() {
+            (self.width as i32, self.height as i32)
+        } else {
+            self.inner.size()
+        };
         let view = self.webview.webview();
         let url = view
             .uri()
@@ -861,6 +924,7 @@ impl Window {
 #[derive(Debug)]
 enum Cmd<'a> {
     Animation(config::PanelAnimation, u32),
+    Fit(Option<geometry::Geometry>),
     Parent { handle: Option<&'a str> },
     Navigate { title: &'a str, url: &'a str },
     Hide,
@@ -871,6 +935,9 @@ enum Cmd<'a> {
 }
 
 fn parse(line: &str) -> Option<Cmd<'_>> {
+    if let Some(json) = line.strip_prefix("fit ") {
+        return serde_json::from_str(json).ok().map(Cmd::Fit);
+    }
     if let Some(json) = line.strip_prefix("animation ") {
         let (mode, duration_ms) = serde_json::from_str(json).ok()?;
         return Some(Cmd::Animation(mode, duration_ms));
@@ -968,6 +1035,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn app_bounds_commands_keep_global_logical_coordinates() {
+        let bounds = geometry::Geometry {
+            x: -1832.0,
+            y: 88.0,
+            width: 1744.0,
+            height: 904.0,
+        };
+        let json = serde_json::to_string(&Some(bounds)).unwrap();
+        let Some(Cmd::Fit(parsed)) = parse(&format!("fit {json}\n")) else {
+            panic!("app bounds rejected");
+        };
+        assert_eq!(parsed, Some(bounds));
+        assert!(matches!(parse("fit null\n"), Some(Cmd::Fit(None))));
+        assert!(parse("fit {}").is_none());
+    }
+
+    #[test]
     fn opening_preferences_survive_helper_commands_and_use_valid_app_ids() {
         use config::PanelAnimation::*;
         for mode in [DesktopDefault, Instant, FadeIn] {
@@ -1058,6 +1142,7 @@ mod tests {
             width: 1280,
             height: 800,
             animation: (config::PanelAnimation::DesktopDefault, 150),
+            app_bounds: None,
             window_open: false,
             parent_handle: None,
             waiting_for_parent: false,

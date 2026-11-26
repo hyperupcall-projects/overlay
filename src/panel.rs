@@ -104,6 +104,7 @@ pub enum Action {
     BumpFadeDuration(i32),
     BumpPersistence(i32),
     BumpStyle(StyleSetting, i32),
+    ToggleForceFullscreen,
     /// Step the browser window width by `i32` pixels (±`BUMP`).
     BumpWidth(i32),
     /// Step the browser window height by `i32` pixels (±`BUMP`).
@@ -741,6 +742,13 @@ pub fn settings_layout(width: u32, ui: &Ui, config: &Config) -> Vec<Hit> {
     }
     hits.push(Hit {
         x: inset,
+        y: 366,
+        w,
+        h: 34,
+        action: Action::ToggleForceFullscreen,
+    });
+    hits.push(Hit {
+        x: inset,
         y: 784,
         w,
         h: 34,
@@ -1195,6 +1203,19 @@ fn draw_settings_native(canvas: &mut [u8], width: u32, height: u32, ui: &Ui, con
                     ui.recording_shortcut || hover,
                 );
             }
+            Action::ToggleForceFullscreen => draw_button(
+                canvas,
+                width,
+                stride,
+                &hit,
+                content,
+                if content.config.force_fullscreen {
+                    "Force fullscreen: On"
+                } else {
+                    "Force fullscreen: Off"
+                },
+                content.config.force_fullscreen || hover,
+            ),
             Action::SetTheme(theme) => {
                 draw_button(
                     canvas,
@@ -1849,7 +1870,10 @@ mod tests {
         }
         for (width, height) in [(SETTINGS_WIDTH, SETTINGS_HEIGHT), (320, 400)] {
             let hits = settings_hits(width, height, &ui, &Config::default());
-            assert_eq!(hits.len(), 30);
+            assert_eq!(hits.len(), 31);
+            assert!(hits
+                .iter()
+                .any(|h| h.action == Action::ToggleForceFullscreen));
             for delta in [-1, 1] {
                 assert!(hits
                     .iter()

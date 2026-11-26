@@ -59,6 +59,10 @@ shortcut = "Meta+F"
 browser_width = 1280
 browser_height = 800
 
+# Fill the center between the panels, keeping the shared margin on all sides.
+# Applies to every app opened in overlay; normal window sizes are kept when off.
+force_fullscreen = false
+
 # Rectangle contents (also editable in Settings -> Contents).
 # Each section belongs to "left", "right", "top", or "bottom". Corner-box
 # contents are fixed. Repeat [[sections]] to add more sections, followed by

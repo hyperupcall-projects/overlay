@@ -65,6 +65,20 @@ pub fn layout(width: u32, height: u32, dimensions: [u32; 4], margin: u32) -> Vec
     .collect()
 }
 
+/// The largest app rectangle inside the frame, with the same shared gap on
+/// every side. Derive it from the fitted rails so cramped outputs agree too.
+pub fn app_bounds(
+    width: u32,
+    height: u32,
+    dimensions: [u32; 4],
+    margin: u32,
+) -> Option<(u32, u32, u32, u32)> {
+    let rects = layout(width, height, dimensions, margin);
+    let top = rects.iter().find(|r| r.part == Part::Top)?;
+    let left = rects.iter().find(|r| r.part == Part::Left)?;
+    Some((top.x, left.y, top.w, left.h))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +107,10 @@ mod tests {
         assert_eq!(br.y - (right.y + right.h), 12);
         assert_eq!(bottom.x - (bl.x + bl.w), 12);
         assert_eq!(br.x - (bottom.x + bottom.w), 12);
+        assert_eq!(
+            app_bounds(1560, 1000, [64, 80, 48, 56], 12),
+            Some((88, 72, 1368, 848))
+        );
     }
 
     #[test]
@@ -102,6 +120,21 @@ mod tests {
                 for dimensions in [[200, 200, 56, 56], [800, 48, 400, 40], [u32::MAX; 4]] {
                     let rects = layout(w, h, dimensions, m);
                     assert!(rects.len() <= 8);
+                    if let Some((x, y, app_w, app_h)) = app_bounds(w, h, dimensions, m) {
+                        let get = |part| rects.iter().find(|r| r.part == part).unwrap();
+                        let gap = get(Part::TopLeft).x;
+                        let left = get(Part::Left);
+                        let right = get(Part::Right);
+                        let top = get(Part::Top);
+                        let bottom = get(Part::Bottom);
+                        assert!(app_w > 0 && app_h > 0);
+                        assert_eq!(x - (left.x + left.w), gap);
+                        assert_eq!(right.x - (x + app_w), gap);
+                        assert_eq!(y - (top.y + top.h), gap);
+                        assert_eq!(bottom.y - (y + app_h), gap);
+                    } else {
+                        assert!(rects.is_empty());
+                    }
                     for (i, a) in rects.iter().enumerate() {
                         assert!(a.w > 0 && a.h > 0);
                         assert!(a.x + a.w <= w && a.y + a.h <= h);

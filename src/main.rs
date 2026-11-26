@@ -524,6 +524,39 @@ impl App {
         ]
     }
 
+    fn update_browser_geometry(&mut self) {
+        if !self.config.force_fullscreen {
+            self.browser.set_app_bounds(None);
+            return;
+        }
+        let Some(panel) = &self.panel else {
+            return;
+        };
+        let Some((x, y, width, height)) = frame::app_bounds(
+            panel.width,
+            panel.height,
+            self.dimensions(),
+            self.config.margin,
+        ) else {
+            return;
+        };
+        let output = panel
+            .layer
+            .wl_surface()
+            .data::<smithay_client_toolkit::compositor::SurfaceData<()>>()
+            .and_then(|data| data.outputs().next());
+        let Some(info) = output.and_then(|output| self.output_state.info(&output)) else {
+            return;
+        };
+        let (output_x, output_y) = info.logical_position.unwrap_or(info.location);
+        self.browser.set_app_bounds(Some(geometry::Geometry {
+            x: f64::from(output_x) + f64::from(x),
+            y: f64::from(output_y) + f64::from(y),
+            width: f64::from(width),
+            height: f64::from(height),
+        }));
+    }
+
     /// Place settings inward from the bottom-left box, fitting the entire
     /// card on the same output even when the requested edge sizes are large.
     fn settings_placement(&self) -> Option<(u32, u32, i32, i32)> {
@@ -825,6 +858,12 @@ impl App {
                 self.save_config();
                 true
             }
+            Action::ToggleForceFullscreen => {
+                self.config.force_fullscreen = !self.config.force_fullscreen;
+                self.update_browser_geometry();
+                self.save_config();
+                true
+            }
             Action::SetPanelAnimation(mode) => {
                 self.config.panel_animation = mode;
                 self.browser
@@ -869,6 +908,7 @@ impl App {
                 *value = next;
                 self.save_config();
                 self.update_settings_geometry();
+                self.update_browser_geometry();
                 true
             }
             Action::BumpWidth(delta) => {
@@ -1165,6 +1205,7 @@ impl CompositorHandler for App {
             .is_some_and(|p| p.layer.wl_surface() == surface)
         {
             self.show_backdrop(output);
+            self.update_browser_geometry();
         }
     }
 
@@ -1197,6 +1238,7 @@ impl OutputHandler for App {
         _qh: &QueueHandle<Self>,
         _output: wl_output::WlOutput,
     ) {
+        self.update_browser_geometry();
     }
 
     fn output_destroyed(
@@ -1252,6 +1294,7 @@ impl LayerShellHandler for App {
         }
         if is_frame {
             self.update_settings_geometry();
+            self.update_browser_geometry();
             if self.ui.settings_open && self.settings.is_none() {
                 self.show_settings();
             }

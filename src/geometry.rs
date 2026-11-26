@@ -52,6 +52,7 @@ pub struct Bridge {
     connection: zbus::blocking::Connection,
     name: String,
     directory: std::path::PathBuf,
+    target: Option<Geometry>,
 }
 
 impl Bridge {
@@ -70,31 +71,58 @@ impl Bridge {
             connection,
             name,
             directory,
+            target: None,
         };
-        let path = bridge.directory.join("geometry.js");
+        bridge.load()?;
+        Ok(bridge)
+    }
+
+    /// Reload the PID-scoped watcher only when the frame's app area changes.
+    /// KWin owns global placement; GTK resize requests alone cannot position it.
+    pub fn set_target(&mut self, target: Option<Geometry>) -> anyhow::Result<()> {
+        if self.target == target {
+            return Ok(());
+        }
+        self.target = target;
+        let proxy = zbus::blocking::Proxy::new(
+            &self.connection,
+            "org.kde.KWin",
+            "/Scripting",
+            "org.kde.kwin.Scripting",
+        )?;
+        let _: bool = proxy.call("unloadScript", &(self.name.as_str(),))?;
+        self.load()
+    }
+
+    fn load(&self) -> anyhow::Result<()> {
+        let pid = std::process::id();
+        let service = format!("org.overlay.Geometry.p{pid}");
+        let path = self.directory.join("geometry.js");
         let script = include_str!("geometry.js")
             .replace("__PID__", &pid.to_string())
-            .replace("__SERVICE__", &service);
+            .replace("__SERVICE__", &service)
+            .replace("__TARGET__", &serde_json::to_string(&self.target)?);
         std::fs::OpenOptions::new()
-            .create_new(true)
+            .create(true)
+            .truncate(true)
             .write(true)
             .mode(0o600)
             .open(&path)?
             .write_all(script.as_bytes())?;
         let proxy = zbus::blocking::Proxy::new(
-            &bridge.connection,
+            &self.connection,
             "org.kde.KWin",
             "/Scripting",
             "org.kde.kwin.Scripting",
         )?;
         let id: i32 = proxy.call(
             "loadScript",
-            &(path.to_string_lossy().as_ref(), bridge.name.as_str()),
+            &(path.to_string_lossy().as_ref(), self.name.as_str()),
         )?;
         anyhow::ensure!(id >= 0, "KWin rejected geometry script");
         let script_path = format!("/Scripting/Script{id}");
         let script = zbus::blocking::Proxy::new(
-            &bridge.connection,
+            &self.connection,
             "org.kde.KWin",
             script_path.as_str(),
             "org.kde.kwin.Script",
@@ -102,7 +130,7 @@ impl Bridge {
         let _: () = script.call("run", &())?;
         drop(script);
         drop(proxy);
-        Ok(bridge)
+        Ok(())
     }
 }
 

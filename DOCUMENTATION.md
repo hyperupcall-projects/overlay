@@ -57,6 +57,14 @@ from 48–800 px and top/bottom heights from 40–400 px. When the screen is too
 small, dimensions are fitted proportionally; saved preferences remain unchanged.
 The settings card also scales down to stay on screen.
 
+**Force fullscreen** in Settings → Appearance makes every app opened in overlay
+fill the center between the four panels, with the shared **Margin** on every
+side. App windows become borderless and follow panel size, margin, and output
+changes immediately, keeping the current page loaded. Turning it off restores
+normal window sizing and the remembered placement. It defaults to off and is
+saved as `force_fullscreen = false` in the config. Placement uses the same
+temporary KWin script as window restoration.
+
 The existing **Light**, **Dark**, and **System** appearance choices, corner
 radius, browser window size, and shortcut recorder are retained.
 All changes apply immediately and persist to the config file. Margin (0–80 px)
@@ -248,6 +256,7 @@ theme = "system"   # "light", "dark", or "system"
 # Settings UI, which rewrites this file (comments are not preserved).
 browser_width = 1280
 browser_height = 800
+force_fullscreen = false # fill the center between panels, respecting margin
 
 [[sections]]
 rectangle = "left" # "left", "right", "top", or "bottom"
